@@ -1,0 +1,60 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        architecture: [x86, x64]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          # 安装 Visual Studio 和其他依赖工具
+          choco install visualstudio2019community
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+
+      - name: Set up build environment
+        run: |
+          # 设置 Visual Studio 环境变量
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vsWhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcVars = join-path $vsPath "VC\Auxiliary\Build\vcvars${{ matrix.architecture }}.bat"
+          echo "##[command]call $vcVars"
+          Invoke-Expression "call $vcVars"
+          echo "##[set-env name=VC_VARS]$vcVars"
+          echo "Visual Studio environment set up for ${{ matrix.architecture }}"
+
+      - name: Configure CMake
+        run: |
+          # 使用 CMake 配置项目
+          mkdir build
+          cd build
+          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
+          # 或者根据需要选择其他生成器，如 "Visual Studio 17 2022"
+          # cmake -G "Visual Studio 17 2022" -A ${{ matrix.architecture }} ..
+
+      - name: Build project
+        run: |
+          # 使用 Ninja 或 Visual Studio 构建项目
+          cd build
+          cmake --build . --config Release
+          # 或者使用 MSBuild
+          # msbuild /p:Configuration=Release /p:Platform=$architecture
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        if: ${{ success() }}
+        with:
+          name: ${{ matrix.architecture }}-exe
+          path: build\Release\*.exe
